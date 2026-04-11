@@ -62,77 +62,73 @@ def extract_svm(img):
     return np.hstack([hog_feat, color_feat])
 
 # --- APP START ---
-st.set_page_config(page_title="Fruit Verdict AI", layout="centered")
+st.set_page_config(page_title="Fruit AI", layout="wide")
 model_cnn, model_svm, model_lr = load_all_models()
 
-st.title("🍎 Unified Fruit Verdict Hub")
-st.markdown("This system combines CNN, SVM, and Logistic Regression for a single accurate verdict.")
+st.title("🍎 Fruit Recognition Dashboard")
 
-# --- SMALLER INPUT SECTION ---
-col_left, col_mid, col_right = st.columns([1, 4, 1])
+# --- SMALLER CAMERA LAYOUT ---
+# We use columns to center and shrink the camera feed
+col_left, col_mid, col_right = st.columns([1, 2, 1]) 
 with col_mid:
-    tab1, tab2 = st.tabs(["📸 Camera", "📁 Upload Image"])
-    with tab1:
-        picture = st.camera_input("Scan fruit")
-    with tab2:
-        uploaded_file = st.file_uploader("Upload from device", type=["jpg", "jpeg", "png"])
+    picture = st.camera_input("Scan your fruit")
 
-input_img = picture if picture else uploaded_file
-
-if input_img:
-    img_raw = Image.open(input_img)
-    st.image(img_raw, caption="Captured Source", use_container_width=True)
+if picture:
+    img_raw = Image.open(picture)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    with st.spinner("Calculating consensus verdict..."):
-        try:
-            # 1. CNN Predictions
-            cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
-            cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
+    with st.spinner("Analyzing across all models..."):
+        # CNN
+        cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
+        cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
+        
+        # SVM
+        svm_feat = extract_svm(img_cv)
+        if hasattr(model_svm, "predict_proba"):
+            svm_probs = model_svm.predict_proba([svm_feat])[0]
+        else:
+            scores = model_svm.decision_function([svm_feat])[0]
+            exp_s = np.exp(scores - np.max(scores))
+            svm_probs = exp_s / exp_s.sum()
+        
+        # Logistic Regression
+        lr_feat = extract_lr(img_cv)
+        lr_probs = model_lr.predict_proba([lr_feat])[0]
+
+    # --- ENSEMBLE VERDICT LOGIC ---
+    # We take the average probability across all 3 models for a 'Fair' verdict
+    final_probs = (cnn_probs + svm_probs + lr_probs) / 3
+    final_idx = np.argmax(final_probs)
+    final_fruit = fruit_labels[final_idx]
+    
+    st.divider()
+
+    # Display Verdict
+    info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
+    st.header(f"Final Verdict: {info['emoji']} {final_fruit}")
+    
+    # Results Columns
+    c1, c2, c3 = st.columns(3)
+    
+    models_list = [
+        {"name": "CNN Model", "p": cnn_probs, "ui": c1},
+        {"name": "SVM Model", "p": svm_probs, "ui": c2},
+        {"name": "Logistic Reg", "p": lr_probs, "ui": c3}
+    ]
+
+    for m in models_list:
+        with m["ui"]:
+            idx = np.argmax(m["p"])
+            conf = m["p"][idx] * 100
+            st.metric(m["name"], fruit_labels[idx], f"{conf:.1f}%")
             
-            # 2. SVM Predictions (with probability workaround)
-            svm_feat = extract_svm(img_cv)
-            if hasattr(model_svm, "predict_proba"):
-                svm_probs = model_svm.predict_proba([svm_feat])[0]
-            else:
-                scores = model_svm.decision_function([svm_feat])[0]
-                exp_s = np.exp(scores - np.max(scores))
-                svm_probs = exp_s / exp_s.sum()
-            
-            # 3. Logistic Regression Predictions
-            lr_feat = extract_lr(img_cv)
-            lr_probs = model_lr.predict_proba([lr_feat])[0]
-
-            # --- ENSEMBLE VERDICT ---
-            # We average the scores of all three models to get the final winner
-            ensemble_probs = (cnn_probs + svm_probs + lr_probs) / 3
-            top_indices = ensemble_probs.argsort()[-3:][::-1]
-            final_fruit = fruit_labels[top_indices[0]]
-            info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
-
-            # --- PREVIOUS STYLE UI DISPLAY ---
-            st.write("---")
-            st.header(f"{info['emoji']} Final Verdict: {final_fruit}")
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Combined Confidence", f"{ensemble_probs[top_indices[0]]*100:.1f}%")
-            c2.metric("Calorie Estimate", info['calories'])
-
-            st.info(f"**💡 AI Consensus Fact:** {info['fact']}")
-
-            # Bar Chart showing Top 3 based on the Ensemble
-            st.write("### 📊 Probability Consensus")
+            # Mini Probability Chart
+            top3 = m["p"].argsort()[-3:][::-1]
             df = pd.DataFrame({
-                'Fruit': [fruit_labels[i] for i in top_indices],
-                'Match (%)': [ensemble_probs[i]*100 for i in top_indices]
+                'Fruit': [fruit_labels[i] for i in top3],
+                'Match': [m["p"][i]*100 for i in top3]
             })
-            st.bar_chart(df, x="Fruit", y="Match (%)")
+            st.bar_chart(df, x="Fruit", y="Match", height=180)
 
-            # Expandable Breakdown for curiosity
-            with st.expander("See breakdown by model"):
-                st.write(f"**CNN says:** {fruit_labels[np.argmax(cnn_probs)]} ({np.max(cnn_probs)*100:.1f}%)")
-                st.write(f"**SVM says:** {fruit_labels[np.argmax(svm_probs)]} ({np.max(svm_probs)*100:.1f}%)")
-                st.write(f"**LogReg says:** {fruit_labels[np.argmax(lr_probs)]} ({np.max(lr_probs)*100:.1f}%)")
-
-        except Exception as e:
-            st.error(f"Verdict failed: {e}")
+    # Health Info Box
+    st.info(f"💡 **Fun Fact:** {info['fact']} | **Energy:** {info['calories']}")
