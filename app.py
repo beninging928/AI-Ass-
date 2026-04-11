@@ -6,9 +6,13 @@ import numpy as np
 from PIL import Image
 import tensorflow as tf
 
-# --- STEP 1: DOWNLOAD MODELS FROM GOOGLE DRIVE ---
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="AI Multi-Model Hub", layout="centered")
+
+# --- STEP 1: DOWNLOAD & LOAD MODELS ---
 @st.cache_resource
 def load_all_models():
+    # Mapping of filenames to Google Drive File IDs
     model_configs = {
         "model1.h5": "13stvBP7-Ta7R2BKnrbuRuTIQtFhikiVw",
         "model2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
@@ -18,54 +22,59 @@ def load_all_models():
     for filename, file_id in model_configs.items():
         if not os.path.exists(filename):
             url = f'https://drive.google.com/uc?id={file_id}'
-            gdown.download(url, filename, quiet=False, fuzzy=True)
+            try:
+                # fuzzy=True helps bypass Google's "large file" warning page
+                gdown.download(url, filename, quiet=False, fuzzy=True)
+            except Exception as e:
+                st.error(f"Failed to download {filename}. Check Drive permissions!")
+                st.stop()
 
+    # Load with correct libraries
     m1 = tf.keras.models.load_model("model1.h5")
     m2 = joblib.load("model2.pkl")
     m3 = joblib.load("model3.pkl")
 
     return m1, m2, m3
 
-model1, model2, model3 = load_all_models()
+# Initialize
+with st.spinner("Loading AI Models... Please wait."):
+    model1, model2, model3 = load_all_models()
 
-# --- STEP 2: APP UI ---
-st.sidebar.title("Navigation")
-selection = st.sidebar.radio("Go to", ["Home", "Model Playground"])
+# --- STEP 2: SIDEBAR NAVIGATION ---
+st.sidebar.title("🛠 Dashboard")
+page = st.sidebar.radio("Navigation", ["Home", "Model Playground"])
 
-if selection == "Home":
-    st.title("Welcome to the AI Model Hub")
-    st.write("Select 'Model Playground' in the sidebar to start.")
+if page == "Home":
+    st.title("🤖 Welcome to the AI Model Hub")
+    st.markdown("""
+    This application allows you to toggle between three different trained models 
+    and test them in real-time using your camera.
+    
+    1. **Model 1 (H5):** Deep Learning CNN.
+    2. **Model 2 (PKL):** Scikit-Learn Classifier.
+    3. **Model 3 (PKL):** Scikit-Learn Pipeline.
+    """)
+    st.info("👈 Select 'Model Playground' from the sidebar to begin.")
 
 else:
     st.title("📷 Model Playground")
-    # FIX: This selectbox variable is used to decide which model to run below
-    model_choice = st.selectbox("Select Model to Test", ["Detector", "Classifier", "Analyzer"])
+    
+    # Selection of specific model
+    model_choice = st.selectbox("Which model should analyze the photo?", 
+                                ["Detector (H5)", "Classifier (PKL)", "Analyzer (PKL)"])
 
-    picture = st.camera_input("Take a photo")
+    # IMPORTANT: Change this size to match what you used in Google Colab!
+    target_size = (128, 128) 
+
+    picture = st.camera_input("Take a snapshot")
 
     if picture:
+        # 1. Process Image
         img = Image.open(picture)
-        st.image(img, caption="Snapshot", use_container_width=True)
+        st.image(img, caption="Snapshot Captured", use_container_width=True)
 
-        # Pre-process
-        img_resized = img.resize((224, 224))
-        img_array = np.array(img_resized) / 255.0
-        img_tensor = np.expand_dims(img_array, axis=0)
+        # 2. Resize and Normalize
+        img_resized = img.resize(target_size)
+        img_array = np.array(img_resized) / 255.0  # Scales pixels to 0-1 range
 
-        st.write("### AI Result")
-
-        # FIX: Matching the model_choice names exactly
-        if model_choice == "Detector":
-            prediction = model1.predict(img_tensor)
-            result = np.argmax(prediction)
-            st.success(f"Model 1 (H5) predicts: {result}")
-
-        elif model_choice == "Classifier":
-            flat_img = img_array.flatten().reshape(1, -1)
-            prediction = model2.predict(flat_img)
-            st.success(f"Model 2 (PKL) predicts: {prediction[0]}")
-
-        else:
-            flat_img = img_array.flatten().reshape(1, -1)
-            prediction = model3.predict(flat_img)
-            st.success(f"Model 3 (PKL) predicts: {prediction[0]}")
+        st.divider()
