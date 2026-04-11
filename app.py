@@ -13,21 +13,19 @@ import pandas as pd
 IMG_SIZE = 64
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
 
-# Nutrition & Facts Database
 fruit_info = {
     "Apple": {"emoji": "🍎", "fact": "Apples are 25% air, which is why they float!", "calories": "52 kcal/100g"},
-    "Avocado": {"emoji": "🥑", "fact": "Avocados are actually large berries with a single seed.", "calories": "160 kcal/100g"},
-    "Banana": {"emoji": "🍌", "fact": "Bananas are slightly radioactive due to potassium content!", "calories": "89 kcal/100g"},
-    "Broccoli": {"emoji": "🥦", "fact": "Broccoli contains more protein per calorie than steak.", "calories": "34 kcal/100g"},
-    "Capsicum": {"emoji": "🫑", "fact": "Red bell peppers are just ripened green peppers.", "calories": "20 kcal/100g"},
-    "Cauliflower": {"emoji": "🥦", "fact": "The name means 'cabbage flower' in Italian.", "calories": "25 kcal/100g"},
-    "Cucumber": {"emoji": "🥒", "fact": "Cucumbers can be up to 96% water.", "calories": "15 kcal/100g"},
-    "Lemon": {"emoji": "🍋", "fact": "Lemon juice can prevent other fruits from browning.", "calories": "29 kcal/100g"},
-    "Mango": {"emoji": "🥭", "fact": "Mangos are the most consumed fruit in the world.", "calories": "60 kcal/100g"},
-    "Watermelon": {"emoji": "🍉", "fact": "Every part of a watermelon, including the rind, is edible.", "calories": "30 kcal/100g"}
+    "Avocado": {"emoji": "🥑", "fact": "Avocados are actually large berries.", "calories": "160 kcal/100g"},
+    "Banana": {"emoji": "🍌", "fact": "Bananas are slightly radioactive!", "calories": "89 kcal/100g"},
+    "Broccoli": {"emoji": "🥦", "fact": "Broccoli has more protein per calorie than steak.", "calories": "34 kcal/100g"},
+    "Capsicum": {"emoji": "🫑", "fact": "Red peppers are just ripened green peppers.", "calories": "20 kcal/100g"},
+    "Cauliflower": {"emoji": "🥦", "fact": "The name means 'cabbage flower'.", "calories": "25 kcal/100g"},
+    "Cucumber": {"emoji": "🥒", "fact": "Up to 96% water.", "calories": "15 kcal/100g"},
+    "Lemon": {"emoji": "🍋", "fact": "Prevents other fruits from browning.", "calories": "29 kcal/100g"},
+    "Mango": {"emoji": "🥭", "fact": "Most consumed fruit in the world.", "calories": "60 kcal/100g"},
+    "Watermelon": {"emoji": "🍉", "fact": "Every part, including the rind, is edible.", "calories": "30 kcal/100g"}
 }
 
-# --- STEP 1: DOWNLOAD & LOAD MODELS ---
 @st.cache_resource
 def load_all_models():
     model_configs = {
@@ -39,18 +37,15 @@ def load_all_models():
         if not os.path.exists(filename):
             url = f'https://drive.google.com/uc?id={file_id}'
             gdown.download(url, filename, quiet=False, fuzzy=True)
-
     return (
         tf.keras.models.load_model("fruit_model_v2.h5"),
         joblib.load("svm_best_v2.pkl"),
         joblib.load("lr_improved.pkl")
     )
 
-# --- STEP 2: FEATURE EXTRACTION ---
 def extract_lr(img):
     img_res = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-    img_blur = cv2.GaussianBlur(img_res, (3, 3), 0)
-    gray = cv2.cvtColor(img_blur, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(img_res, cv2.COLOR_BGR2GRAY)
     hog_feat = hog(gray, pixels_per_cell=(4, 4), cells_per_block=(2, 2), feature_vector=True)
     color_feat = cv2.calcHist([img_res], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     color_feat = cv2.normalize(color_feat, color_feat).flatten()
@@ -67,24 +62,25 @@ def extract_svm(img):
     return np.hstack([hog_feat, color_feat])
 
 # --- APP START ---
-st.set_page_config(page_title="Pro Fruit AI", page_icon="🍎", layout="wide")
+st.set_page_config(page_title="Fruit AI", layout="wide")
 model_cnn, model_svm, model_lr = load_all_models()
 
-st.title("🍎 Pro Fruit AI Dashboard")
-st.markdown("Upload a photo to see a side-by-side comparison of 3 different AI models.")
+st.title("🍎 Fruit Recognition Dashboard")
 
-picture = st.camera_input("Take a photo")
+# --- SMALLER CAMERA LAYOUT ---
+# We use columns to center and shrink the camera feed
+col_left, col_mid, col_right = st.columns([1, 2, 1]) 
+with col_mid:
+    picture = st.camera_input("Scan your fruit")
 
 if picture:
     img_raw = Image.open(picture)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    # Pre-calculate all model predictions for comparison
-    with st.spinner("Analyzing with all models..."):
+    with st.spinner("Analyzing across all models..."):
         # CNN
         cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
         cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
-        cnn_idx = np.argmax(cnn_probs)
         
         # SVM
         svm_feat = extract_svm(img_cv)
@@ -94,49 +90,45 @@ if picture:
             scores = model_svm.decision_function([svm_feat])[0]
             exp_s = np.exp(scores - np.max(scores))
             svm_probs = exp_s / exp_s.sum()
-        svm_idx = np.argmax(svm_probs)
         
         # Logistic Regression
         lr_feat = extract_lr(img_cv)
         lr_probs = model_lr.predict_proba([lr_feat])[0]
-        lr_idx = np.argmax(lr_probs)
 
-    # --- UI LAYOUT: RESULTS ---
-    col1, col2, col3 = st.columns(3)
+    # --- ENSEMBLE VERDICT LOGIC ---
+    # We take the average probability across all 3 models for a 'Fair' verdict
+    final_probs = (cnn_probs + svm_probs + lr_probs) / 3
+    final_idx = np.argmax(final_probs)
+    final_fruit = fruit_labels[final_idx]
+    
+    st.divider()
 
-    models_data = [
-        {"name": "CNN (Deep Learning)", "idx": cnn_idx, "prob": cnn_probs, "col": col1},
-        {"name": "SVM (Traditional)", "idx": svm_idx, "prob": svm_probs, "col": col2},
-        {"name": "Logistic Regression", "idx": lr_idx, "prob": lr_probs, "col": col3}
+    # Display Verdict
+    info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
+    st.header(f"Final Verdict: {info['emoji']} {final_fruit}")
+    
+    # Results Columns
+    c1, c2, c3 = st.columns(3)
+    
+    models_list = [
+        {"name": "CNN Model", "p": cnn_probs, "ui": c1},
+        {"name": "SVM Model", "p": svm_probs, "ui": c2},
+        {"name": "Logistic Reg", "p": lr_probs, "ui": c3}
     ]
 
-    for m in models_data:
-        with m["col"]:
-            fruit = fruit_labels[m["idx"]]
-            conf = m["prob"][m["idx"]] * 100
-            st.metric(m["name"], f"{fruit}", f"{conf:.1f}% Match")
+    for m in models_list:
+        with m["ui"]:
+            idx = np.argmax(m["p"])
+            conf = m["p"][idx] * 100
+            st.metric(m["name"], fruit_labels[idx], f"{conf:.1f}%")
             
-            # Mini Bar Chart
-            top3_idx = m["prob"].argsort()[-3:][::-1]
+            # Mini Probability Chart
+            top3 = m["p"].argsort()[-3:][::-1]
             df = pd.DataFrame({
-                'Fruit': [fruit_labels[i] for i in top3_idx],
-                'Conf': [m["prob"][i]*100 for i in top3_idx]
+                'Fruit': [fruit_labels[i] for i in top3],
+                'Match': [m["p"][i]*100 for i in top3]
             })
-            st.bar_chart(df, x="Fruit", y="Conf", height=200)
+            st.bar_chart(df, x="Fruit", y="Match", height=180)
 
-    # --- FINAL VERDICT SECTION ---
-    st.divider()
-    # We use the CNN as the 'Primary' verdict
-    final_fruit = fruit_labels[cnn_idx]
-    info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "No data", "calories": "N/A"})
-
-    v1, v2 = st.columns([1, 2])
-    with v1:
-        st.image(img_raw, use_container_width=True)
-    with v2:
-        st.header(f"{info['emoji']} Final Verdict: {final_fruit}")
-        st.info(f"**Did you know?** {info['fact']}")
-        st.write(f"**Energy Content:** {info['calories']}")
-        
-        if st.button("Search for Recipes"):
-            st.write(f"[Click here for {final_fruit} recipes](https://www.google.com/search?q={final_fruit}+recipes)")
+    # Health Info Box
+    st.info(f"💡 **Fun Fact:** {info['fact']} | **Energy:** {info['calories']}")
