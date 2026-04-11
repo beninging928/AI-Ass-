@@ -71,27 +71,29 @@ else:
     picture = st.camera_input("Snapshot a fruit")
 
     if picture:
-        # Load and display original
         img = Image.open(picture)
-        
-        # Pre-process image
-        img_resized = img.resize(target_size)
-        img_array = np.array(img_resized) / 255.0  # Normalize to 0-1
-        
         st.write("---")
         
         try:
-            with st.spinner("Analyzing..."):
+            with st.spinner("Scaling and Analyzing..."):
                 if choice == "CNN Model":
-                    # CNN expects 4D: (Batch, Width, Height, Channels)
+                    # --- CNN SCALE (e.g., 128x128) ---
+                    img_resized = img.resize((128, 128))
+                    img_array = np.array(img_resized) / 255.0
                     inp = np.expand_dims(img_array, axis=0)
+                    
                     prediction = model1.predict(inp)
                     result_index = np.argmax(prediction)
                     confidence = np.max(prediction) * 100
                 
                 else:
-                    # SVM and LogReg expect 2D Flat Vector: (1, Pixels*Channels)
-                    # This converts (128, 128, 3) into (1, 49152)
+                    # --- ML MODELS SCALE (e.g., 64x64) ---
+                    # Change (64, 64) to whatever size you used in Colab for SVM/LogReg
+                    ml_size = (64, 64) 
+                    img_resized = img.resize(ml_size)
+                    img_array = np.array(img_resized) / 255.0
+                    
+                    # Flatten the image into a 1D row of numbers
                     flat_inp = img_array.reshape(1, -1)
                     
                     if choice == "SVM Model":
@@ -99,24 +101,8 @@ else:
                     else:
                         result_index = int(model3.predict(flat_inp)[0])
                     
-                    confidence = 100 # Default for non-probabilistic ML models
+                    confidence = 100 
 
-            # Get Fruit Name
+            # Show Result
             detected_fruit = fruit_labels[result_index]
-
-            # --- DRAWING THE "DETECTION" BOX ---
-            # Classifier models see the whole image, so we frame the whole image
-            draw = ImageDraw.Draw(img)
-            draw.rectangle([15, 15, img.size[0]-15, img.size[1]-15], outline="lime", width=12)
-            
-            # Show Results
-            st.image(img, caption=f"Analyzed via {choice}", use_container_width=True)
-            
-            col1, col2 = st.columns(2)
-            col1.success(f"**Result:** {detected_fruit}")
-            col2.info(f"**Confidence:** {confidence:.1f}%")
-
-        except ValueError as e:
-            st.error("📐 Dimension Mismatch Error!")
-            st.write(f"The model expects a different image size than {target_size}. Check your Colab training code!")
-            st.expander("Technical details").write(e)
+            st.success(f"Detected: {detected_fruit}")
