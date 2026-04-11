@@ -5,6 +5,7 @@ import os
 import numpy as np
 from PIL import Image
 import tensorflow as tf
+from PIL import ImageDraw  # Moved import to the top for efficiency
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="AI Multi-Model Hub", layout="centered")
@@ -12,7 +13,6 @@ st.set_page_config(page_title="AI Multi-Model Hub", layout="centered")
 # --- STEP 1: DOWNLOAD & LOAD MODELS ---
 @st.cache_resource
 def load_all_models():
-    # Mapping of filenames to Google Drive File IDs
     model_configs = {
         "model1.h5": "13stvBP7-Ta7R2BKnrbuRuTIQtFhikiVw",
         "model2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
@@ -23,13 +23,11 @@ def load_all_models():
         if not os.path.exists(filename):
             url = f'https://drive.google.com/uc?id={file_id}'
             try:
-                # fuzzy=True helps bypass Google's "large file" warning page
                 gdown.download(url, filename, quiet=False, fuzzy=True)
             except Exception as e:
                 st.error(f"Failed to download {filename}. Check Drive permissions!")
                 st.stop()
 
-    # Load with correct libraries
     m1 = tf.keras.models.load_model("model1.h5")
     m2 = joblib.load("model2.pkl")
     m3 = joblib.load("model3.pkl")
@@ -64,41 +62,42 @@ else:
 
     picture = st.camera_input("Take a snapshot")
     fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
+    
+    # FIXED: Indented everything below this line
     if picture:
-    img = Image.open(picture)
-    
-    # Pre-process
-    img_resized = img.resize((128, 128))
-    img_array = np.array(img_resized) / 255.0
-    
-    with st.spinner("Analyzing fruit..."):
-        if "H5" in model_choice:
-            prediction = model1.predict(np.expand_dims(img_array, axis=0))
-            result_index = np.argmax(prediction)
-            confidence = np.max(prediction) * 100
-        else:
-            flat_img = img_array.flatten().reshape(1, -1)
-            result_index = model2.predict(flat_img)[0]
-            confidence = 100  # Scikit-learn doesn't always provide probability
-
-        # --- STEP 3: SHOW HUMAN NAMES ---
-        detected_fruit = fruit_labels[result_index]
-
-        # Display result with a nice UI
-        st.subheader(f"Fruit Detected: {detected_fruit}")
+        img = Image.open(picture)
         
-        # This adds a "Metric" card for confidence
-        st.metric(label="AI Confidence", value=f"{confidence:.1f}%")
-
-        if confidence > 70:
-            st.success(f"I am pretty sure this is a {detected_fruit}!")
-        else:
-            st.warning("I'm not very confident, but it looks like a " + detected_fruit)
-
-        # To "draw" a label on the image:
-        from PIL import ImageDraw, ImageFont
-        draw = ImageDraw.Draw(img)
-        # Drawing a simple rectangle around the edge to simulate a "match"
-        draw.rectangle([10, 10, img.size[0]-10, img.size[1]-10], outline="green", width=10)
+        # Pre-process
+        img_resized = img.resize(target_size)
+        img_array = np.array(img_resized) / 255.0
         
-        st.image(img, caption=f"Result: {detected_fruit}")
+        with st.spinner("Analyzing fruit..."):
+            if "H5" in model_choice:
+                prediction = model1.predict(np.expand_dims(img_array, axis=0))
+                result_index = np.argmax(prediction)
+                confidence = np.max(prediction) * 100
+            elif "Classifier" in model_choice:
+                flat_img = img_array.flatten().reshape(1, -1)
+                result_index = int(model2.predict(flat_img)[0])
+                confidence = 100 
+            else: # Analyzer (Model 3)
+                flat_img = img_array.flatten().reshape(1, -1)
+                result_index = int(model3.predict(flat_img)[0])
+                confidence = 100 
+
+            # --- STEP 3: SHOW RESULTS ---
+            detected_fruit = fruit_labels[result_index]
+
+            st.subheader(f"Fruit Detected: {detected_fruit}")
+            st.metric(label="AI Confidence", value=f"{confidence:.1f}%")
+
+            if confidence > 70:
+                st.success(f"I am pretty sure this is a {detected_fruit}!")
+            else:
+                st.warning(f"I'm not very confident, but it looks like a {detected_fruit}")
+
+            # Draw "Detection" box
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([10, 10, img.size[0]-10, img.size[1]-10], outline="green", width=10)
+            
+            st.image(img, caption=f"Result: {detected_fruit}")
