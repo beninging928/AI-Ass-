@@ -1,108 +1,167 @@
-import streamlit as st
-import gdown
-import joblib
 import os
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+import joblib
 import tensorflow as tf
+from skimage.feature import hog
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="Fruit Detection Hub", layout="centered")
+# -------------------------
+# SETTINGS
+# -------------------------
+IMG_SIZE = 64
+DATA_DIR = "dataset/test"
 
-# --- STEP 1: DOWNLOAD & LOAD MODELS ---
-@st.cache_resource
-def load_all_models():
-    # File IDs for model1.h5, model2.pkl, model3.pkl
-    model_configs = {
-        "model1.h5": "13stvBP7-Ta7R2BKnrbuRuTIQtFhikiVw",
-        "model2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
-        "model3.pkl": "1j632tPQnIkFzWcpOQNdqiOVgI3Tpl4qA"
-    }
+# -------------------------
+# FEATURE: Logistic Regression (MATCH TRAIN)
+# -------------------------
+def extract_features_lr(img):
+    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+    img = cv2.GaussianBlur(img, (3, 3), 0)
 
-    for filename, file_id in model_configs.items():
-        if not os.path.exists(filename):
-            url = f'https://drive.google.com/uc?id={file_id}'
-            try:
-                gdown.download(url, filename, quiet=False, fuzzy=True)
-            except Exception:
-                st.error(f"Failed to download {filename}. Check Drive permissions!")
-                st.stop()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Model 1: CNN (TensorFlow)
-    m1 = tf.keras.models.load_model("model1.h5")
-    # Model 2: SVM (Scikit-Learn)
-    m2 = joblib.load("model2.pkl")
-    # Model 3: Logistic Regression (Scikit-Learn)
-    m3 = joblib.load("model3.pkl")
+    hog_feat = hog(
+        gray,
+        pixels_per_cell=(4, 4),
+        cells_per_block=(2, 2),
+        feature_vector=True
+    )
 
-    return m1, m2, m3
+    color_feat = cv2.calcHist(
+        [img], [0, 1, 2], None,
+        [8, 8, 8],
+        [0, 256, 0, 256, 0, 256]
+    )
+    color_feat = cv2.normalize(color_feat, color_feat).flatten()
 
-# Initialize
-with st.spinner("Loading AI Models..."):
-    model1, model2, model3 = load_all_models()
+    edges = cv2.Canny(gray, 100, 200)
+    edge_feat = edges.flatten()
 
-# --- STEP 2: UI SETUP ---
-st.sidebar.title("🛠 Settings")
-page = st.sidebar.radio("Navigate", ["Home", "Model Playground"])
+    return np.hstack([hog_feat, color_feat, edge_feat])
 
-# Exact list based on your alphabetical training folders
-fruit_labels = [
-    "Apple", "Avocado", "Banana", "Broccoli", "Capsicum", 
-    "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"
-]
 
-if page == "Home":
-    st.title("🍎 Fruit Analysis Hub")
-    st.markdown("""
-    Compare how different AI architectures perform on fruit detection:
-    * **Model 1:** CNN (Deep Learning)
-    * **Model 2:** SVM (Traditional ML)
-    * **Model 3:** Logistic Regression (Statistical ML)
-    """)
-else:
-    st.title("📷 Model Playground")
-    
-    # Selection mapping to specific variables
-    choice = st.selectbox("Select Model Architecture", ["CNN Model", "SVM Model", "Logistic Regression"])
-    
-    # CRITICAL: This must match your training pixel size (e.g., 64x64 or 128x128)
-    target_size = (128, 128) 
+# -------------------------
+# FEATURE: SVM (MATCH TRAIN)
+# -------------------------
+def extract_features_svm(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (IMG_SIZE, IMG_SIZE))
 
-    picture = st.camera_input("Snapshot a fruit")
+    hog_feat = hog(
+        gray,
+        pixels_per_cell=(8, 8),
+        cells_per_block=(2, 2),
+        feature_vector=True
+    )
 
-    if picture:
-        img = Image.open(picture)
-        st.write("---")
-        
-        try:
-            with st.spinner("Scaling and Analyzing..."):
-                if choice == "CNN Model":
-                    # --- CNN SCALE (e.g., 128x128) ---
-                    img_resized = img.resize((128, 128))
-                    img_array = np.array(img_resized) / 255.0
-                    inp = np.expand_dims(img_array, axis=0)
-                    
-                    prediction = model1.predict(inp)
-                    result_index = np.argmax(prediction)
-                    confidence = np.max(prediction) * 100
-                
-                else:
-                    # --- ML MODELS SCALE (e.g., 64x64) ---
-                    # Change (64, 64) to whatever size you used in Colab for SVM/LogReg
-                    ml_size = (64, 64) 
-                    img_resized = img.resize(ml_size)
-                    img_array = np.array(img_resized) / 255.0
-                    
-                    # Flatten the image into a 1D row of numbers
-                    flat_inp = img_array.reshape(1, -1)
-                    
-                    if choice == "SVM Model":
-                        result_index = int(model2.predict(flat_inp)[0])
-                    else:
-                        result_index = int(model3.predict(flat_inp)[0])
-                    
-                    confidence = 100 
+    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
 
-            # Show Result
-            detected_fruit = fruit_labels[result_index]
-            st.success(f"Detected: {detected_fruit}")
+    color_feat = cv2.calcHist(
+        [img], [0, 1, 2], None,
+        [8, 8, 8],
+        [0, 256, 0, 256, 0, 256]
+    )
+    color_feat = cv2.normalize(color_feat, color_feat).flatten()
+
+    return np.hstack([hog_feat, color_feat])
+
+
+# -------------------------
+# LOAD TEST DATA
+# -------------------------
+def load_data():
+    X_cnn = []
+    X_lr = []
+    X_svm = []
+    y = []
+
+    class_names = sorted(os.listdir(DATA_DIR))
+
+    for idx, label in enumerate(class_names):
+        folder = os.path.join(DATA_DIR, label)
+
+        for file in os.listdir(folder):
+            img_path = os.path.join(folder, file)
+            img = cv2.imread(img_path)
+
+            if img is None:
+                continue
+
+            # CNN input
+            img_cnn = cv2.resize(img, (128, 128)) / 255.0
+            X_cnn.append(img_cnn)
+
+            # LR features
+            X_lr.append(extract_features_lr(img))
+
+            # SVM features
+            X_svm.append(extract_features_svm(img))
+
+            y.append(idx)
+
+    return (
+        np.array(X_cnn),
+        np.array(X_lr),
+        np.array(X_svm),
+        np.array(y),
+        class_names
+    )
+
+
+print("📂 Loading test data...")
+X_cnn, X_lr, X_svm, y_true, class_names = load_data()
+
+# -------------------------
+# LOAD MODELS
+# -------------------------
+print("📦 Loading models...")
+cnn_model = tf.keras.models.load_model("fruit_model_v2.h5")
+svm_model = joblib.load("svm_best_v2.pkl")
+lr_model = joblib.load("lr_improved.pkl")
+
+# -------------------------
+# PREDICTION
+# -------------------------
+print("🚀 Predicting...")
+
+cnn_pred = np.argmax(cnn_model.predict(X_cnn), axis=1)
+svm_pred = svm_model.predict(X_svm)
+lr_pred = lr_model.predict(X_lr)
+
+# -------------------------
+# EVALUATION FUNCTION
+# -------------------------
+def evaluate_model(name, y_true, y_pred):
+    print(f"\n========== {name} ==========")
+
+    acc = accuracy_score(y_true, y_pred)
+    print(f"Accuracy: {acc:.4f}")
+
+    print("\nClassification Report:")
+    print(classification_report(y_true, y_pred, target_names=class_names))
+
+    cm = confusion_matrix(y_true, y_pred)
+
+    plt.figure(figsize=(6,5))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt='d',
+        xticklabels=class_names,
+        yticklabels=class_names
+    )
+    plt.title(f"{name} Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+
+
+# -------------------------
+# RUN EVALUATION
+# -------------------------
+evaluate_model("CNN", y_true, cnn_pred)
+evaluate_model("SVM", y_true, svm_pred)
+evaluate_model("Logistic Regression", y_true, lr_pred)
