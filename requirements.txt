@@ -7,5 +7,3 @@ tensorflow-cpu
 scikit-learn
 scikit-image
 opencv-python-headless
-seaborn
-matplotlib
