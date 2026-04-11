@@ -3,5 +3,6 @@ gdown
 joblib
 pillow
 numpy
-tensorflow
+tensorflow-cpu
 scikit-learn
+opencv-python-headless
