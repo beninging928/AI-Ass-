@@ -62,73 +62,73 @@ def extract_svm(img):
     return np.hstack([hog_feat, color_feat])
 
 # --- APP START ---
-st.set_page_config(page_title="Fruit AI", layout="wide")
+st.set_page_config(page_title="Fruit AI Classifier", layout="centered")
 model_cnn, model_svm, model_lr = load_all_models()
 
-st.title("🍎 Fruit Recognition Dashboard")
+st.title("🍎 Fruit Recognition Hub")
 
-# --- SMALLER CAMERA LAYOUT ---
-# We use columns to center and shrink the camera feed
-col_left, col_mid, col_right = st.columns([1, 2, 1]) 
+# --- SIDEBAR SETTINGS ---
+st.sidebar.header("Settings")
+model_choice = st.sidebar.selectbox("Choose AI Architecture", ["CNN", "SVM", "Logistic Regression"])
+
+# --- SMALLER INPUT SECTION ---
+col_left, col_mid, col_right = st.columns([1, 4, 1])
 with col_mid:
-    picture = st.camera_input("Scan your fruit")
+    # Two options for input
+    tab1, tab2 = st.tabs(["📸 Camera", "📁 Upload File"])
+    with tab1:
+        picture = st.camera_input("Take a snapshot")
+    with tab2:
+        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-if picture:
-    img_raw = Image.open(picture)
+# Decide which image to use
+input_img = picture if picture else uploaded_file
+
+if input_img:
+    img_raw = Image.open(input_img)
+    st.image(img_raw, caption="Selected Image", use_container_width=True)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    with st.spinner("Analyzing across all models..."):
-        # CNN
-        cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
-        cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
-        
-        # SVM
-        svm_feat = extract_svm(img_cv)
-        if hasattr(model_svm, "predict_proba"):
-            svm_probs = model_svm.predict_proba([svm_feat])[0]
-        else:
-            scores = model_svm.decision_function([svm_feat])[0]
-            exp_s = np.exp(scores - np.max(scores))
-            svm_probs = exp_s / exp_s.sum()
-        
-        # Logistic Regression
-        lr_feat = extract_lr(img_cv)
-        lr_probs = model_lr.predict_proba([lr_feat])[0]
-
-    # --- ENSEMBLE VERDICT LOGIC ---
-    # We take the average probability across all 3 models for a 'Fair' verdict
-    final_probs = (cnn_probs + svm_probs + lr_probs) / 3
-    final_idx = np.argmax(final_probs)
-    final_fruit = fruit_labels[final_idx]
-    
-    st.divider()
-
-    # Display Verdict
-    info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
-    st.header(f"Final Verdict: {info['emoji']} {final_fruit}")
-    
-    # Results Columns
-    c1, c2, c3 = st.columns(3)
-    
-    models_list = [
-        {"name": "CNN Model", "p": cnn_probs, "ui": c1},
-        {"name": "SVM Model", "p": svm_probs, "ui": c2},
-        {"name": "Logistic Reg", "p": lr_probs, "ui": c3}
-    ]
-
-    for m in models_list:
-        with m["ui"]:
-            idx = np.argmax(m["p"])
-            conf = m["p"][idx] * 100
-            st.metric(m["name"], fruit_labels[idx], f"{conf:.1f}%")
+    with st.spinner(f"Analyzing with {model_choice}..."):
+        try:
+            if model_choice == "CNN":
+                cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
+                probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
             
-            # Mini Probability Chart
-            top3 = m["p"].argsort()[-3:][::-1]
-            df = pd.DataFrame({
-                'Fruit': [fruit_labels[i] for i in top3],
-                'Match': [m["p"][i]*100 for i in top3]
-            })
-            st.bar_chart(df, x="Fruit", y="Match", height=180)
+            elif model_choice == "SVM":
+                feat = extract_svm(img_cv)
+                if hasattr(model_svm, "predict_proba"):
+                    probs = model_svm.predict_proba([feat])[0]
+                else:
+                    scores = model_svm.decision_function([feat])[0]
+                    exp_s = np.exp(scores - np.max(scores))
+                    probs = exp_s / exp_s.sum()
+            
+            else: # Logistic Regression
+                feat = extract_lr(img_cv)
+                probs = model_lr.predict_proba([feat])[0]
 
-    # Health Info Box
-    st.info(f"💡 **Fun Fact:** {info['fact']} | **Energy:** {info['calories']}")
+            # --- DISPLAY RESULTS ---
+            top_indices = probs.argsort()[-3:][::-1]
+            final_fruit = fruit_labels[top_indices[0]]
+            info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
+
+            st.write("---")
+            st.header(f"{info['emoji']} Prediction: {final_fruit}")
+            
+            # Confidence Metrics
+            c1, c2 = st.columns(2)
+            c1.metric("Confidence", f"{probs[top_indices[0]]*100:.1f}%")
+            c2.metric("Energy", info['calories'])
+
+            st.info(f"**💡 Fun Fact:** {info['fact']}")
+
+            # Top 3 Bar Chart
+            df = pd.DataFrame({
+                'Fruit': [fruit_labels[i] for i in top_indices],
+                'Match (%)': [probs[i]*100 for i in top_indices]
+            })
+            st.bar_chart(df, x="Fruit", y="Match (%)")
+
+        except Exception as e:
+            st.error(f"Error: {e}")
