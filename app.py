@@ -59,22 +59,43 @@ if page == "Home":
 else:
     st.title("📷 Model Playground")
     
-    # Selection of specific model
-    model_choice = st.selectbox("Which model should analyze the photo?", 
-                                ["Detector (H5)", "Classifier (PKL)", "Analyzer (PKL)"])
-
-    # IMPORTANT: Change this size to match what you used in Google Colab!
+    model_choice = st.selectbox("Select Model", ["Detector (H5)", "Classifier (PKL)", "Analyzer (PKL)"])
     target_size = (128, 128) 
 
     picture = st.camera_input("Take a snapshot")
 
     if picture:
-        # 1. Process Image
+        # --- TEST 1: See if image even loads ---
+        st.info("✅ Image captured! Processing...")
         img = Image.open(picture)
-        st.image(img, caption="Snapshot Captured", use_container_width=True)
+        st.image(img, caption="What the AI sees", use_container_width=True)
 
-        # 2. Resize and Normalize
+        # --- TEST 2: Processing ---
         img_resized = img.resize(target_size)
-        img_array = np.array(img_resized) / 255.0  # Scales pixels to 0-1 range
+        img_array = np.array(img_resized) / 255.0
+        
+        st.write("---")
+        st.subheader("Results")
 
-        st.divider()
+        try:
+            if "H5" in model_choice:
+                st.write("🔄 Running H5 Model...")
+                img_tensor = np.expand_dims(img_array, axis=0)
+                prediction = model1.predict(img_tensor)
+                result = np.argmax(prediction)
+                st.success(f"Final Prediction: {result}")
+
+            else:
+                st.write(f"🔄 Running {model_choice}...")
+                flat_img = img_array.flatten().reshape(1, -1)
+                
+                # Check which model to use
+                if "Classifier" in model_choice:
+                    prediction = model2.predict(flat_img)
+                else:
+                    prediction = model3.predict(flat_img)
+                
+                st.success(f"Final Prediction: {prediction[0]}")
+
+        except Exception as e:
+            st.error(f"❌ An error occurred: {e}")
