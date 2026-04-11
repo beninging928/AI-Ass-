@@ -11,9 +11,11 @@ import pandas as pd
 
 # --- SETTINGS & DATABASE ---
 IMG_SIZE = 64
+# We set a threshold. If the weighted probability is lower than this, we reject the image.
+CONFIDENCE_THRESHOLD = 0.45 
+
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
 
-# YOUR ACTUAL EVALUATION DATA
 model_metrics = {
     "CNN": {"Accuracy": 0.2790, "F1": 0.24, "Note": "Struggles with Lemon/Banana"},
     "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon (0.72 F1)"},
@@ -50,7 +52,6 @@ def load_all_models():
         joblib.load("lr_improved.pkl")
     )
 
-# --- FEATURE EXTRACTION (Exact match to your provided script) ---
 def extract_lr(img):
     img_res = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img_blur = cv2.GaussianBlur(img_res, (3, 3), 0)
@@ -80,7 +81,7 @@ with st.expander("✅ See Detectable Fruits & Vegetables"):
     for i, label in enumerate(fruit_labels):
         emoji = fruit_info.get(label, {}).get("emoji", "▫️")
         cols[i % 5].write(f"{emoji} **{label}**")
-# Centered Small Input
+
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
     tabs = st.tabs(["📸 Snapshot", "📁 Upload"])
@@ -93,11 +94,10 @@ if input_img:
     img_raw = Image.open(input_img)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    with st.spinner("Calculating predictions..."):
+    with st.spinner("Analyzing..."):
         # CNN
         cnn_in = cv2.resize(img_cv, (128,128)) / 255.0
         cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
-        
         # SVM
         svm_feat = extract_svm(img_cv)
         if hasattr(model_svm, "predict_proba"):
@@ -106,49 +106,45 @@ if input_img:
             scores = model_svm.decision_function([svm_feat])[0]
             e_s = np.exp(scores - np.max(scores))
             svm_probs = e_s / e_s.sum()
-            
         # LR
         lr_feat = extract_lr(img_cv)
         lr_probs = model_lr.predict_proba([lr_feat])[0]
 
-    st.divider()
-
-    # --- PERFORMANCE & PREDICTION GRID ---
-    m_cols = st.columns(3)
-    info_list = [
-        ("CNN", cnn_probs, m_cols[0]),
-        ("SVM", svm_probs, m_cols[1]),
-        ("Logistic Regression", lr_probs, m_cols[2])
-    ]
-
-    for name, probs, col in info_list:
-        with col:
-            idx = np.argmax(probs)
-            st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}% Match")
-            
-            # Show your Evaluation Data
-            with st.expander("📊 Test Bench Metrics"):
-                met = model_metrics[name]
-                st.write(f"**Accuracy:** {met['Accuracy']:.2%}")
-                st.write(f"**Weighted F1:** {met['F1']}")
-                st.caption(f"Note: {met['Note']}")
-
-            # Prob Chart
-            top3 = probs.argsort()[-3:][::-1]
-            df = pd.DataFrame({'Fruit': [fruit_labels[i] for i in top3], 'Prob': [probs[i]*100 for i in top3]})
-            st.bar_chart(df, x="Fruit", y="Prob", height=180)
-
-    # --- FINAL VERDICT (Prioritizing SVM as it's the strongest) ---
-    st.divider()
-    # We use a weighted average favoring the SVM since it performed best in your tests
+    # --- WEIGHTED CALCULATION ---
+    # SVM is your strongest model (54%), so we give it the most weight.
     weighted_probs = (cnn_probs * 0.2) + (svm_probs * 0.5) + (lr_probs * 0.3)
+    best_conf = np.max(weighted_probs)
     final_idx = np.argmax(weighted_probs)
     final_fruit = fruit_labels[final_idx]
-    info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
 
-    v1, v2 = st.columns([1, 2])
-    with v1: st.image(img_raw, use_container_width=True)
-    with v2:
-        st.header(f"{info['emoji']} Consensus Verdict: {final_fruit}")
-        st.info(f"**Did you know?** {info['fact']}")
-        st.markdown(f"**Estimated Energy:** {info['calories']}")
+    st.divider()
+
+    # --- LOGIC: IS IT ACTUALLY A FRUIT? ---
+    if best_conf < CONFIDENCE_THRESHOLD:
+        st.warning("⚠️ **No supported fruit detected.**")
+        st.write("The AI is not confident enough to give a verdict. Please ensure the fruit is centered and well-lit, or try a different object.")
+        st.image(img_raw, width=300)
+    else:
+        # Show Metrics
+        m_cols = st.columns(3)
+        info_list = [("CNN", cnn_probs, m_cols[0]), ("SVM", svm_probs, m_cols[1]), ("Logistic Regression", lr_probs, m_cols[2])]
+        for name, probs, col in info_list:
+            with col:
+                idx = np.argmax(probs)
+                st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}%")
+                with st.expander("📊 Test Metrics"):
+                    st.write(f"Accuracy: {model_metrics[name]['Accuracy']:.2%}")
+                top3 = probs.argsort()[-3:][::-1]
+                df = pd.DataFrame({'Fruit': [fruit_labels[i] for i in top3], 'Prob': [probs[i]*100 for i in top3]})
+                st.bar_chart(df, x="Fruit", y="Prob", height=180)
+
+        # Show Final Verdict
+        st.divider()
+        info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
+        v1, v2 = st.columns([1, 2])
+        with v1: st.image(img_raw, use_container_width=True)
+        with v2:
+            st.header(f"{info['emoji']} Consensus Verdict: {final_fruit}")
+            st.success(f"Confidence Level: {best_conf*100:.1f}%")
+            st.info(f"**Did you know?** {info['fact']}")
+            st.markdown(f"**Estimated Energy:** {info['calories']}")
