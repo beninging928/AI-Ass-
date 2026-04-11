@@ -13,24 +13,25 @@ import pandas as pd
 IMG_SIZE = 64
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
 
-# YOUR ACTUAL EVALUATION DATA
-model_metrics = {
-    "CNN": {"Accuracy": 0.2790, "F1": 0.24, "Note": "Struggles with Lemon/Banana"},
-    "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon (0.72 F1)"},
-    "Logistic Regression": {"Accuracy": 0.4417, "F1": 0.44, "Note": "Balanced performance"}
-}
-
+# Nutrition & Facts Database
 fruit_info = {
     "Apple": {"emoji": "🍎", "fact": "Apples are 25% air, which is why they float!", "calories": "52 kcal/100g"},
     "Avocado": {"emoji": "🥑", "fact": "Avocados are actually large berries.", "calories": "160 kcal/100g"},
-    "Banana": {"emoji": "🍌", "fact": "Bananas are slightly radioactive!", "calories": "89 kcal/100g"},
-    "Broccoli": {"emoji": "🥦", "fact": "Broccoli has more protein per calorie than steak.", "calories": "34 kcal/100g"},
-    "Capsicum": {"emoji": "🫑", "fact": "Red peppers are just ripened green peppers.", "calories": "20 kcal/100g"},
-    "Cauliflower": {"emoji": "🥦", "fact": "The name means 'cabbage flower'.", "calories": "25 kcal/100g"},
-    "Cucumber": {"emoji": "🥒", "fact": "Up to 96% water.", "calories": "15 kcal/100g"},
-    "Lemon": {"emoji": "🍋", "fact": "Prevents other fruits from browning.", "calories": "29 kcal/100g"},
-    "Mango": {"emoji": "🥭", "fact": "Most consumed fruit in the world.", "calories": "60 kcal/100g"},
-    "Watermelon": {"emoji": "🍉", "fact": "Every part, including the rind, is edible.", "calories": "30 kcal/100g"}
+    "Banana": {"emoji": "🍌", "fact": "Bananas are slightly radioactive due to potassium!", "calories": "89 kcal/100g"},
+    "Broccoli": {"emoji": "🥦", "fact": "Broccoli contains more protein per calorie than steak.", "calories": "34 kcal/100g"},
+    "Capsicum": {"emoji": "🫑", "fact": "Red bell peppers are just ripened green peppers.", "calories": "20 kcal/100g"},
+    "Cauliflower": {"emoji": "🥦", "fact": "The name means 'cabbage flower' in Italian.", "calories": "25 kcal/100g"},
+    "Cucumber": {"emoji": "🥒", "fact": "Cucumbers can be up to 96% water.", "calories": "15 kcal/100g"},
+    "Lemon": {"emoji": "🍋", "fact": "Lemon juice can prevent other fruits from browning.", "calories": "29 kcal/100g"},
+    "Mango": {"emoji": "🥭", "fact": "Mangos are the most consumed fruit in the world.", "calories": "60 kcal/100g"},
+    "Watermelon": {"emoji": "🍉", "fact": "Every part of a watermelon is edible.", "calories": "30 kcal/100g"}
+}
+
+# Real Evaluation Metrics from your output
+model_metrics = {
+    "CNN": {"Accuracy": 0.2790, "F1": 0.24},
+    "SVM": {"Accuracy": 0.5403, "F1": 0.54},
+    "Logistic Regression": {"Accuracy": 0.4417, "F1": 0.44}
 }
 
 @st.cache_resource
@@ -50,7 +51,7 @@ def load_all_models():
         joblib.load("lr_improved.pkl")
     )
 
-# --- FEATURE EXTRACTION (Exact match to your provided script) ---
+# --- FEATURE EXTRACTION (Matches your Evaluation Script) ---
 def extract_lr(img):
     img_res = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img_blur = cv2.GaussianBlur(img_res, (3, 3), 0)
@@ -70,46 +71,52 @@ def extract_svm(img):
     color_feat = cv2.normalize(color_feat, color_feat).flatten()
     return np.hstack([hog_feat, color_feat])
 
-# --- UI SETUP ---
-st.set_page_config(page_title="Pro Fruit AI Dashboard", layout="wide")
+# --- APP START ---
+st.set_page_config(page_title="Pro Fruit AI", layout="wide")
 model_cnn, model_svm, model_lr = load_all_models()
 
-st.title("🍎 Pro Fruit AI Analysis")
+# --- HEADER SECTION ---
+st.title("🍎 Pro Fruit AI Dashboard")
 
-# Centered Small Input
+# --- LIST OF DETECTABLE FOODS ---
+with st.expander("✅ See Detectable Fruits & Vegetables"):
+    cols = st.columns(5)
+    for i, label in enumerate(fruit_labels):
+        emoji = fruit_info.get(label, {}).get("emoji", "▫️")
+        cols[i % 5].write(f"{emoji} **{label}**")
+
+# --- INPUT SECTION ---
+st.write("### 📸 Step 1: Provide an Image")
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
-    tabs = st.tabs(["📸 Snapshot", "📁 Upload"])
-    with tabs[0]: picture = st.camera_input("Scan Fruit")
+    tabs = st.tabs(["Camera Snapshot", "Upload File"])
+    with tabs[0]: picture = st.camera_input("Snapshot")
     with tabs[1]: upload = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
 
-input_img = picture if picture else upload
+source = picture if picture else upload
 
-if input_img:
-    img_raw = Image.open(input_img)
+if source:
+    img_raw = Image.open(source)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    with st.spinner("Calculating predictions..."):
+    with st.spinner("Analyzing data..."):
         # CNN
         cnn_in = cv2.resize(img_cv, (128,128)) / 255.0
         cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
-        
         # SVM
         svm_feat = extract_svm(img_cv)
-        if hasattr(model_svm, "predict_proba"):
-            svm_probs = model_svm.predict_proba([svm_feat])[0]
+        if hasattr(model_svm, "predict_proba"): svm_probs = model_svm.predict_proba([svm_feat])[0]
         else:
-            scores = model_svm.decision_function([svm_feat])[0]
-            e_s = np.exp(scores - np.max(scores))
+            s = model_svm.decision_function([svm_feat])[0]
+            e_s = np.exp(s - np.max(s))
             svm_probs = e_s / e_s.sum()
-            
         # LR
         lr_feat = extract_lr(img_cv)
         lr_probs = model_lr.predict_proba([lr_feat])[0]
 
     st.divider()
 
-    # --- PERFORMANCE & PREDICTION GRID ---
+    # --- MODEL PERFORMANCE & PREDICTION ---
     m_cols = st.columns(3)
     info_list = [
         ("CNN", cnn_probs, m_cols[0]),
@@ -120,31 +127,29 @@ if input_img:
     for name, probs, col in info_list:
         with col:
             idx = np.argmax(probs)
-            st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}% Match")
+            st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}%")
             
-            # Show your Evaluation Data
-            with st.expander("📊 Test Bench Metrics"):
+            with st.expander("📊 Model Accuracy"):
                 met = model_metrics[name]
-                st.write(f"**Accuracy:** {met['Accuracy']:.2%}")
-                st.write(f"**Weighted F1:** {met['F1']}")
-                st.caption(f"Note: {met['Note']}")
+                st.write(f"Test Accuracy: **{met['Accuracy']:.1f}%**")
+                st.write(f"Weighted F1: **{met['F1']}**")
 
-            # Prob Chart
             top3 = probs.argsort()[-3:][::-1]
             df = pd.DataFrame({'Fruit': [fruit_labels[i] for i in top3], 'Prob': [probs[i]*100 for i in top3]})
             st.bar_chart(df, x="Fruit", y="Prob", height=180)
 
-    # --- FINAL VERDICT (Prioritizing SVM as it's the strongest) ---
+    # --- FINAL VERDICT (Weighted Favoring SVM) ---
     st.divider()
-    # We use a weighted average favoring the SVM since it performed best in your tests
     weighted_probs = (cnn_probs * 0.2) + (svm_probs * 0.5) + (lr_probs * 0.3)
     final_idx = np.argmax(weighted_probs)
     final_fruit = fruit_labels[final_idx]
     info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
 
     v1, v2 = st.columns([1, 2])
-    with v1: st.image(img_raw, use_container_width=True)
+    with v1: st.image(img_raw, use_container_width=True, caption="Source Image")
     with v2:
-        st.header(f"{info['emoji']} Consensus Verdict: {final_fruit}")
+        st.header(f"{info['emoji']} Verdict: {final_fruit}")
         st.info(f"**Did you know?** {info['fact']}")
-        st.markdown(f"**Estimated Energy:** {info['calories']}")
+        st.write(f"**Nutrition:** {info['calories']}")
+        if st.button("Search for Recipes"):
+            st.write(f"[Click here for {final_fruit} recipes](https://www.google.com/search?q={final_fruit}+recipes)")
