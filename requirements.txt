@@ -3,5 +3,5 @@ gdown
 joblib
 pillow
 numpy
-tensorflow-cpu
+tensorflow
 scikit-learn
