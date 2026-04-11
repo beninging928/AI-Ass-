@@ -13,7 +13,6 @@ import pandas as pd
 IMG_SIZE = 64
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
 
-# Nutrition & Facts Database
 fruit_info = {
     "Apple": {"emoji": "🍎", "fact": "Apples are 25% air, which is why they float!", "calories": "52 kcal/100g"},
     "Avocado": {"emoji": "🥑", "fact": "Avocados are actually large berries with a single seed.", "calories": "160 kcal/100g"},
@@ -71,15 +70,25 @@ st.set_page_config(page_title="Pro Fruit AI", page_icon="🍎", layout="wide")
 model_cnn, model_svm, model_lr = load_all_models()
 
 st.title("🍎 Pro Fruit AI Dashboard")
-st.markdown("Upload a photo to see a side-by-side comparison of 3 different AI models.")
+st.markdown("Analyze your fruit using three different AI architectures simultaneously.")
 
-picture = st.camera_input("Take a photo")
+# --- INPUT SECTION (SMALLER) ---
+col_space1, col_input, col_space2 = st.columns([1, 2, 1])
 
-if picture:
-    img_raw = Image.open(picture)
+with col_input:
+    input_tab1, input_tab2 = st.tabs(["📸 Camera Snap", "📁 Upload Image"])
+    with input_tab1:
+        picture = st.camera_input("Take a photo")
+    with input_tab2:
+        uploaded_file = st.file_uploader("Choose a file from your computer", type=["jpg", "png", "jpeg"])
+
+# Select the source
+source = picture if picture else uploaded_file
+
+if source:
+    img_raw = Image.open(source)
     img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
     
-    # Pre-calculate all model predictions for comparison
     with st.spinner("Analyzing with all models..."):
         # CNN
         cnn_in = cv2.resize(img_cv, (128, 128)) / 255.0
@@ -101,7 +110,8 @@ if picture:
         lr_probs = model_lr.predict_proba([lr_feat])[0]
         lr_idx = np.argmax(lr_probs)
 
-    # --- UI LAYOUT: RESULTS ---
+    # --- UI LAYOUT: SIDE-BY-SIDE RESULTS ---
+    st.divider()
     col1, col2, col3 = st.columns(3)
 
     models_data = [
@@ -126,13 +136,13 @@ if picture:
 
     # --- FINAL VERDICT SECTION ---
     st.divider()
-    # We use the CNN as the 'Primary' verdict
+    # Using CNN as the primary verdict
     final_fruit = fruit_labels[cnn_idx]
     info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "No data", "calories": "N/A"})
 
     v1, v2 = st.columns([1, 2])
     with v1:
-        st.image(img_raw, use_container_width=True)
+        st.image(img_raw, use_container_width=True, caption="Source Image")
     with v2:
         st.header(f"{info['emoji']} Final Verdict: {final_fruit}")
         st.info(f"**Did you know?** {info['fact']}")
