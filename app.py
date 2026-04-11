@@ -3,16 +3,16 @@ import gdown
 import joblib
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import tensorflow as tf
-from PIL import ImageDraw  # Moved import to the top for efficiency
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Multi-Model Hub", layout="centered")
+st.set_page_config(page_title="Fruit Detection Hub", layout="centered")
 
 # --- STEP 1: DOWNLOAD & LOAD MODELS ---
 @st.cache_resource
 def load_all_models():
+    # File IDs for model1.h5, model2.pkl, model3.pkl
     model_configs = {
         "model1.h5": "13stvBP7-Ta7R2BKnrbuRuTIQtFhikiVw",
         "model2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
@@ -24,80 +24,99 @@ def load_all_models():
             url = f'https://drive.google.com/uc?id={file_id}'
             try:
                 gdown.download(url, filename, quiet=False, fuzzy=True)
-            except Exception as e:
+            except Exception:
                 st.error(f"Failed to download {filename}. Check Drive permissions!")
                 st.stop()
 
+    # Model 1: CNN (TensorFlow)
     m1 = tf.keras.models.load_model("model1.h5")
+    # Model 2: SVM (Scikit-Learn)
     m2 = joblib.load("model2.pkl")
+    # Model 3: Logistic Regression (Scikit-Learn)
     m3 = joblib.load("model3.pkl")
 
     return m1, m2, m3
 
 # Initialize
-with st.spinner("Loading AI Models... Please wait."):
+with st.spinner("Loading AI Models..."):
     model1, model2, model3 = load_all_models()
 
-# --- STEP 2: SIDEBAR NAVIGATION ---
-st.sidebar.title("🛠 Dashboard")
-page = st.sidebar.radio("Navigation", ["Home", "Model Playground"])
+# --- STEP 2: UI SETUP ---
+st.sidebar.title("🛠 Settings")
+page = st.sidebar.radio("Navigate", ["Home", "Model Playground"])
+
+# Exact list based on your alphabetical training folders
+fruit_labels = [
+    "Apple", "Avocado", "Banana", "Broccoli", "Capsicum", 
+    "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"
+]
 
 if page == "Home":
-    st.title("🤖 Welcome to the AI Model Hub")
+    st.title("🍎 Fruit Analysis Hub")
     st.markdown("""
-    This application allows you to toggle between three different trained models 
-    and test them in real-time using your camera.
-    
-    1. **Model 1 (H5):** Deep Learning CNN.
-    2. **Model 2 (PKL):** Scikit-Learn Classifier.
-    3. **Model 3 (PKL):** Scikit-Learn Pipeline.
+    Compare how different AI architectures perform on fruit detection:
+    * **Model 1:** CNN (Deep Learning)
+    * **Model 2:** SVM (Traditional ML)
+    * **Model 3:** Logistic Regression (Statistical ML)
     """)
-    st.info("👈 Select 'Model Playground' from the sidebar to begin.")
-
 else:
     st.title("📷 Model Playground")
     
-    model_choice = st.selectbox("Select Model", ["Detector (H5)", "Classifier (PKL)", "Analyzer (PKL)"])
+    # Selection mapping to specific variables
+    choice = st.selectbox("Select Model Architecture", ["CNN Model", "SVM Model", "Logistic Regression"])
+    
+    # CRITICAL: This must match your training pixel size (e.g., 64x64 or 128x128)
     target_size = (128, 128) 
 
-    picture = st.camera_input("Take a snapshot")
-    fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
-    
-    # FIXED: Indented everything below this line
+    picture = st.camera_input("Snapshot a fruit")
+
     if picture:
+        # Load and display original
         img = Image.open(picture)
         
-        # Pre-process
+        # Pre-process image
         img_resized = img.resize(target_size)
-        img_array = np.array(img_resized) / 255.0
+        img_array = np.array(img_resized) / 255.0  # Normalize to 0-1
         
-        with st.spinner("Analyzing fruit..."):
-            if "H5" in model_choice:
-                prediction = model1.predict(np.expand_dims(img_array, axis=0))
-                result_index = np.argmax(prediction)
-                confidence = np.max(prediction) * 100
-            elif "Classifier" in model_choice:
-                flat_img = img_array.flatten().reshape(1, -1)
-                result_index = int(model2.predict(flat_img)[0])
-                confidence = 100 
-            else: # Analyzer (Model 3)
-                flat_img = img_array.flatten().reshape(1, -1)
-                result_index = int(model3.predict(flat_img)[0])
-                confidence = 100 
+        st.write("---")
+        
+        try:
+            with st.spinner("Analyzing..."):
+                if choice == "CNN Model":
+                    # CNN expects 4D: (Batch, Width, Height, Channels)
+                    inp = np.expand_dims(img_array, axis=0)
+                    prediction = model1.predict(inp)
+                    result_index = np.argmax(prediction)
+                    confidence = np.max(prediction) * 100
+                
+                else:
+                    # SVM and LogReg expect 2D Flat Vector: (1, Pixels*Channels)
+                    # This converts (128, 128, 3) into (1, 49152)
+                    flat_inp = img_array.reshape(1, -1)
+                    
+                    if choice == "SVM Model":
+                        result_index = int(model2.predict(flat_inp)[0])
+                    else:
+                        result_index = int(model3.predict(flat_inp)[0])
+                    
+                    confidence = 100 # Default for non-probabilistic ML models
 
-            # --- STEP 3: SHOW RESULTS ---
+            # Get Fruit Name
             detected_fruit = fruit_labels[result_index]
 
-            st.subheader(f"Fruit Detected: {detected_fruit}")
-            st.metric(label="AI Confidence", value=f"{confidence:.1f}%")
-
-            if confidence > 70:
-                st.success(f"I am pretty sure this is a {detected_fruit}!")
-            else:
-                st.warning(f"I'm not very confident, but it looks like a {detected_fruit}")
-
-            # Draw "Detection" box
+            # --- DRAWING THE "DETECTION" BOX ---
+            # Classifier models see the whole image, so we frame the whole image
             draw = ImageDraw.Draw(img)
-            draw.rectangle([10, 10, img.size[0]-10, img.size[1]-10], outline="green", width=10)
+            draw.rectangle([15, 15, img.size[0]-15, img.size[1]-15], outline="lime", width=12)
             
-            st.image(img, caption=f"Result: {detected_fruit}")
+            # Show Results
+            st.image(img, caption=f"Analyzed via {choice}", use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            col1.success(f"**Result:** {detected_fruit}")
+            col2.info(f"**Confidence:** {confidence:.1f}%")
+
+        except ValueError as e:
+            st.error("📐 Dimension Mismatch Error!")
+            st.write(f"The model expects a different image size than {target_size}. Check your Colab training code!")
+            st.expander("Technical details").write(e)
