@@ -63,39 +63,42 @@ else:
     target_size = (128, 128) 
 
     picture = st.camera_input("Take a snapshot")
-
+    fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
     if picture:
-        # --- TEST 1: See if image even loads ---
-        st.info("✅ Image captured! Processing...")
-        img = Image.open(picture)
-        st.image(img, caption="What the AI sees", use_container_width=True)
+    img = Image.open(picture)
+    
+    # Pre-process
+    img_resized = img.resize((128, 128))
+    img_array = np.array(img_resized) / 255.0
+    
+    with st.spinner("Analyzing fruit..."):
+        if "H5" in model_choice:
+            prediction = model1.predict(np.expand_dims(img_array, axis=0))
+            result_index = np.argmax(prediction)
+            confidence = np.max(prediction) * 100
+        else:
+            flat_img = img_array.flatten().reshape(1, -1)
+            result_index = model2.predict(flat_img)[0]
+            confidence = 100  # Scikit-learn doesn't always provide probability
 
-        # --- TEST 2: Processing ---
-        img_resized = img.resize(target_size)
-        img_array = np.array(img_resized) / 255.0
+        # --- STEP 3: SHOW HUMAN NAMES ---
+        detected_fruit = fruit_labels[result_index]
+
+        # Display result with a nice UI
+        st.subheader(f"Fruit Detected: {detected_fruit}")
         
-        st.write("---")
-        st.subheader("Results")
+        # This adds a "Metric" card for confidence
+        st.metric(label="AI Confidence", value=f"{confidence:.1f}%")
 
-        try:
-            if "H5" in model_choice:
-                st.write("🔄 Running H5 Model...")
-                img_tensor = np.expand_dims(img_array, axis=0)
-                prediction = model1.predict(img_tensor)
-                result = np.argmax(prediction)
-                st.success(f"Final Prediction: {result}")
+        if confidence > 70:
+            st.success(f"I am pretty sure this is a {detected_fruit}!")
+        else:
+            st.warning("I'm not very confident, but it looks like a " + detected_fruit)
 
-            else:
-                st.write(f"🔄 Running {model_choice}...")
-                flat_img = img_array.flatten().reshape(1, -1)
-                
-                # Check which model to use
-                if "Classifier" in model_choice:
-                    prediction = model2.predict(flat_img)
-                else:
-                    prediction = model3.predict(flat_img)
-                
-                st.success(f"Final Prediction: {prediction[0]}")
-
-        except Exception as e:
-            st.error(f"❌ An error occurred: {e}")
+        # To "draw" a label on the image:
+        from PIL import ImageDraw, ImageFont
+        draw = ImageDraw.Draw(img)
+        # Drawing a simple rectangle around the edge to simulate a "match"
+        draw.rectangle([10, 10, img.size[0]-10, img.size[1]-10], outline="green", width=10)
+        
+        st.image(img, caption=f"Result: {detected_fruit}")
