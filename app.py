@@ -17,11 +17,22 @@ fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflow
 
 # 1. UPDATED METRICS (Based on your high-accuracy results)
 model_metrics = {
-    "CNN": {"Accuracy": 0.8697, "F1": 0.87, "Note": "Best Model"}, # Update with your exact high score
-    "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon"},
-    "Logistic Regression": {"Accuracy": 0.4417, "F1": 0.44, "Note": "Balanced performance"}
+    "CNN": {
+        "Accuracy": 0.8697, # Must be "Accuracy"
+        "F1": 0.87, 
+        "Note": "Optimized Wy-v2 Model"
+    },
+    "SVM": {
+        "Accuracy": 0.5403, 
+        "F1": 0.54, 
+        "Note": "Best at Watermelon"
+    },
+    "Logistic Regression": {
+        "Accuracy": 0.4417, 
+        "F1": 0.44, 
+        "Note": "Balanced performance"
+    }
 }
-
 fruit_info = {
     "Apple": {"emoji": "🍎", "fact": "Apples are 25% air, which is why they float!", "calories": "52 kcal/100g"},
     "Avocado": {"emoji": "🥑", "fact": "Avocados are actually large berries.", "calories": "160 kcal/100g"},
@@ -129,8 +140,11 @@ if input_img:
         st.image(img_raw, width=300)
     else:
         m_cols = st.columns(3)
-        info_list = [("CNN (Strongest)", cnn_probs, m_cols[0]), ("SVM", svm_probs, m_cols[1]), ("Logistic Regression", lr_probs, m_cols[2])]
-        
+        info_list = [
+            ("CNN", cnn_probs, m_cols[0]), 
+            ("SVM", svm_probs, m_cols[1]), 
+            ("Logistic Regression", lr_probs, m_cols[2])
+        ]
         for name, probs, col in info_list:
             with col:
                 idx = np.argmax(probs)
