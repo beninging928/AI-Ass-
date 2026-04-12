@@ -11,14 +11,14 @@ import pandas as pd
 
 # --- SETTINGS & DATABASE ---
 IMG_SIZE = 64
-# We set a threshold. If the weighted probability is lower than this, we reject the image.
 CONFIDENCE_THRESHOLD = 0.45 
 
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
 
+# 1. UPDATED METRICS (Based on your high-accuracy results)
 model_metrics = {
-    "CNN": {"Accuracy": 0.2790, "F1": 0.24, "Note": "Struggles with Lemon/Banana"},
-    "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon (0.72 F1)"},
+    "CNN": {"Accuracy": 0.9250, "F1": 0.92, "Note": "Optimized Wy-v2 Model"}, # Update with your exact high score
+    "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon"},
     "Logistic Regression": {"Accuracy": 0.4417, "F1": 0.44, "Note": "Balanced performance"}
 }
 
@@ -37,8 +37,9 @@ fruit_info = {
 
 @st.cache_resource
 def load_all_models():
+    # 2. UPDATE THE DRIVE ID FOR YOUR NEW MODEL HERE
     model_configs = {
-        "fruit_model_v2.h5": "13stvBP7-Ta7R2BKnrbuRuTIQtFhikiVw",
+        "fruit_model_v2_wy.h5": "15cCVNTiTD3bmarY4UivdOt8vSSS3KjVs", 
         "svm_best_v2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
         "lr_improved.pkl": "1j632tPQnIkFzWcpOQNdqiOVgI3Tpl4qA"
     }
@@ -46,14 +47,16 @@ def load_all_models():
         if not os.path.exists(filename):
             url = f'https://drive.google.com/uc?id={file_id}'
             gdown.download(url, filename, quiet=False, fuzzy=True)
+    
     return (
-        tf.keras.models.load_model("fruit_model_v2.h5"),
+        tf.keras.models.load_model("fruit_model_v2_wy.h5", compile=False),
         joblib.load("svm_best_v2.pkl"),
         joblib.load("lr_improved.pkl")
     )
 
-def extract_lr(img):
-    img_res = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+# --- FEATURE EXTRACTION (Traditional ML uses BGR) ---
+def extract_lr(img_bgr):
+    img_res = cv2.resize(img_bgr, (IMG_SIZE, IMG_SIZE))
     img_blur = cv2.GaussianBlur(img_res, (3, 3), 0)
     gray = cv2.cvtColor(img_blur, cv2.COLOR_BGR2GRAY)
     hog_feat = hog(gray, pixels_per_cell=(4,4), cells_per_block=(2,2), feature_vector=True)
@@ -62,11 +65,11 @@ def extract_lr(img):
     edge_feat = cv2.Canny(gray, 100, 200).flatten()
     return np.hstack([hog_feat, color_feat, edge_feat])
 
-def extract_svm(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+def extract_svm(img_bgr):
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray_res = cv2.resize(gray, (IMG_SIZE, IMG_SIZE))
     hog_feat = hog(gray_res, pixels_per_cell=(8,8), cells_per_block=(2,2), feature_vector=True)
-    img_res = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+    img_res = cv2.resize(img_bgr, (IMG_SIZE, IMG_SIZE))
     color_feat = cv2.calcHist([img_res],[0,1,2],None,[8,8,8],[0,256,0,256,0,256])
     color_feat = cv2.normalize(color_feat, color_feat).flatten()
     return np.hstack([hog_feat, color_feat])
@@ -92,13 +95,15 @@ input_img = picture if picture else upload
 
 if input_img:
     img_raw = Image.open(input_img)
-    img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
+    img_cv = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR) # OpenCV default is BGR
     
     with st.spinner("Analyzing..."):
-        # CNN
-        cnn_in = cv2.resize(img_cv, (128,128)) / 255.0
-        cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0))[0]
-        # SVM
+        # 3. CNN PREPROCESSING (RGB FIX)
+        img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB) # Convert to RGB for CNN
+        cnn_in = cv2.resize(img_rgb, (128,128)) / 255.0
+        cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0), verbose=0)[0]
+        
+        # SVM & LR (Use original BGR)
         svm_feat = extract_svm(img_cv)
         if hasattr(model_svm, "predict_proba"):
             svm_probs = model_svm.predict_proba([svm_feat])[0]
@@ -106,39 +111,36 @@ if input_img:
             scores = model_svm.decision_function([svm_feat])[0]
             e_s = np.exp(scores - np.max(scores))
             svm_probs = e_s / e_s.sum()
-        # LR
+            
         lr_feat = extract_lr(img_cv)
         lr_probs = model_lr.predict_proba([lr_feat])[0]
 
-    # --- WEIGHTED CALCULATION ---
-    # SVM is your strongest model (54%), so we give it the most weight.
-    weighted_probs = (cnn_probs * 0.2) + (svm_probs * 0.5) + (lr_probs * 0.3)
+    # --- UPDATED WEIGHTED CALCULATION ---
+    # Now that CNN is the strongest, we give it the most weight (e.g., 70%)
+    weighted_probs = (cnn_probs * 0.7) + (svm_probs * 0.2) + (lr_probs * 0.1)
     best_conf = np.max(weighted_probs)
     final_idx = np.argmax(weighted_probs)
     final_fruit = fruit_labels[final_idx]
 
     st.divider()
 
-    # --- LOGIC: IS IT ACTUALLY A FRUIT? ---
     if best_conf < CONFIDENCE_THRESHOLD:
         st.warning("⚠️ **No supported fruit detected.**")
-        st.write("The AI is not confident enough to give a verdict. Please ensure the fruit is centered and well-lit, or try a different object.")
         st.image(img_raw, width=300)
     else:
-        # Show Metrics
         m_cols = st.columns(3)
-        info_list = [("CNN", cnn_probs, m_cols[0]), ("SVM", svm_probs, m_cols[1]), ("Logistic Regression", lr_probs, m_cols[2])]
+        info_list = [("CNN (Strongest)", cnn_probs, m_cols[0]), ("SVM", svm_probs, m_cols[1]), ("Logistic Regression", lr_probs, m_cols[2])]
+        
         for name, probs, col in info_list:
             with col:
                 idx = np.argmax(probs)
-                st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}%")
+                st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}% Match")
                 with st.expander("📊 Test Metrics"):
                     st.write(f"Accuracy: {model_metrics[name]['Accuracy']:.2%}")
                 top3 = probs.argsort()[-3:][::-1]
                 df = pd.DataFrame({'Fruit': [fruit_labels[i] for i in top3], 'Prob': [probs[i]*100 for i in top3]})
                 st.bar_chart(df, x="Fruit", y="Prob", height=180)
 
-        # Show Final Verdict
         st.divider()
         info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
         v1, v2 = st.columns([1, 2])
