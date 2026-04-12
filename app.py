@@ -18,7 +18,7 @@ fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflow
 # 1. UPDATED METRICS (Based on your high-accuracy results)
 model_metrics = {
     "CNN": {
-        "Accuracy": 0.8697, "F1": 0.87, "Note": "Optimized Wy-v2 Model"
+        "Accuracy": 0.8697, "F1": 0.87, "Note": "Deep Learning (Primary Model)"
     },
     "SVM": {
         "Accuracy": 0.5403, "F1": 0.54, "Note": "Best at Watermelon"
