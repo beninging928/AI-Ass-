@@ -10,8 +10,8 @@ from PIL import Image
 import pandas as pd
 
 # --- SETTINGS & DATABASE ---
-IMG_SIZE_RF = 128  # RF used 128
-IMG_SIZE_SVM = 64  # SVM used 64
+IMG_SIZE_RF = 128  # Matches Random Forest Training
+IMG_SIZE_SVM = 64  # Matches SVM Training
 CONFIDENCE_THRESHOLD = 0.45 
 
 fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflower", "Cucumber", "Lemon", "Mango", "Watermelon"]
@@ -19,7 +19,7 @@ fruit_labels = ["Apple", "Avocado", "Banana", "Broccoli", "Capsicum", "Cauliflow
 model_metrics = {
     "CNN": {"Accuracy": 0.9250, "F1": 0.92, "Note": "High Performance Wy-v2"},
     "SVM": {"Accuracy": 0.5403, "F1": 0.54, "Note": "Stable Baseline"},
-    "Random Forest": {"Accuracy": 0.8850, "F1": 0.88, "Note": "Replaced Logistic Regression"} # Update with your RF result
+    "Random Forest": {"Accuracy": 0.8850, "F1": 0.88, "Note": "High-Efficiency Tree Model"}
 }
 
 fruit_info = {
@@ -37,14 +37,13 @@ fruit_info = {
 
 @st.cache_resource
 def load_all_models():
-    # Make sure these files exist in your folder!
     model_configs = {
-        "fruit_model_v2_wy.h5": "YOUR_CNN_ID", 
+        "fruit_model_v2_wy.h5": "YOUR_CNN_ID_HERE", # Replace with your actual ID
         "svm_best_v2.pkl": "1DDBGQNAUZBu4VNX61NObYjso_6jDVBko",
         "fruit_rf_model.pkl": "1EkN8HSRlWzcRXOu7EsKdcOkueZBOV8BL" 
     }
     for filename, file_id in model_configs.items():
-        if not os.path.exists(filename) and file_id != "LOCAL_OR_DRIVE_ID":
+        if not os.path.exists(filename) and file_id != "YOUR_CNN_ID_HERE":
             url = f'https://drive.google.com/uc?id={file_id}'
             gdown.download(url, filename, quiet=False, fuzzy=True)
     
@@ -54,24 +53,17 @@ def load_all_models():
         joblib.load("fruit_rf_model.pkl")
     )
 
-# --- NEW RF FEATURE EXTRACTION (Matches your new training code) ---
 def extract_rf(img_bgr):
     img = cv2.resize(img_bgr, (IMG_SIZE_RF, IMG_SIZE_RF))
-    
-    # 1. COLOR: HSV Histogram
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     hist = cv2.calcHist([hsv], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
     cv2.normalize(hist, hist)
     color_feat = hist.flatten()
-
-    # 2. SHAPE: HOG
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     hog_feat = hog(gray, orientations=9, pixels_per_cell=(16, 16), 
                    cells_per_block=(2, 2), feature_vector=True)
-
     return np.hstack([color_feat, hog_feat])
 
-# --- OLD SVM FEATURE EXTRACTION ---
 def extract_svm(img_bgr):
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray_res = cv2.resize(gray, (IMG_SIZE_SVM, IMG_SIZE_SVM))
@@ -105,17 +97,21 @@ if input_img:
         cnn_in = cv2.resize(img_rgb, (128,128)) / 255.0
         cnn_probs = model_cnn.predict(np.expand_dims(cnn_in, axis=0), verbose=0)[0]
         
-        # 2. SVM (BGR - 64px)
+        # 2. SVM (BGR + Manual Softmax fix)
         svm_feat = extract_svm(img_cv)
-        svm_probs = model_svm.predict_proba([svm_feat])[0]
+        if hasattr(model_svm, "predict_proba"):
+            svm_probs = model_svm.predict_proba([svm_feat])[0]
+        else:
+            scores = model_svm.decision_function([svm_feat])[0]
+            exp_scores = np.exp(scores - np.max(scores))
+            svm_probs = exp_scores / exp_scores.sum()
             
-        # 3. RANDOM FOREST (BGR - 128px + HSV)
+        # 3. RANDOM FOREST (BGR + HSV)
         rf_feat = extract_rf(img_cv)
         rf_probs = model_rf.predict_proba([rf_feat])[0]
 
-    # --- WEIGHTED CALCULATION ---
-    # Since RF is usually stronger than LR, let's give it a good weight.
-    weighted_probs = (cnn_probs * 0.5) + (rf_probs * 0.3) + (svm_probs * 0.2)
+    # --- ENSEMBLE WEIGHTING ---
+    weighted_probs = (cnn_probs * 0.6) + (rf_probs * 0.3) + (svm_probs * 0.1)
     best_conf = np.max(weighted_probs)
     final_idx = np.argmax(weighted_probs)
     final_fruit = fruit_labels[final_idx]
@@ -131,7 +127,7 @@ if input_img:
         for name, probs, col in info_list:
             with col:
                 idx = np.argmax(probs)
-                st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}%")
+                st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}% Match")
                 with st.expander("📊 Metrics"):
                     st.write(f"Accuracy: {model_metrics[name]['Accuracy']:.1%}")
                 top3 = probs.argsort()[-3:][::-1]
@@ -139,10 +135,10 @@ if input_img:
                 st.bar_chart(df, x="Fruit", y="Prob", height=180)
 
         st.divider()
-        info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A", "calories": "N/A"})
+        info = fruit_info.get(final_fruit, {"emoji": "❓", "fact": "N/A"})
         v1, v2 = st.columns([1, 2])
         with v1: st.image(img_raw, use_container_width=True)
         with v2:
             st.header(f"{info['emoji']} Verdict: {final_fruit}")
-            st.success(f"Confidence Level: {best_conf*100:.1f}%")
+            st.success(f"Ensemble Confidence: {best_conf*100:.1f}%")
             st.info(f"**Did you know?** {info['fact']}")
