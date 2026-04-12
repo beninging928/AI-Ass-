@@ -143,8 +143,11 @@ if input_img:
             with col:
                 idx = np.argmax(probs)
                 st.metric(name, fruit_labels[idx], f"{probs[idx]*100:.1f}% Match")
-                with st.expander("📊 Test Metrics"):
-                    st.write(f"Accuracy: {model_metrics[name]['Accuracy']:.2%}")
+                with st.expander("📊 Performance Details"):
+                    m = model_metrics[name] # Get data from your model_metrics dict
+                    st.write(f"**Accuracy:** {m['Accuracy']:.2%}")
+                    st.write(f"**F1-Score:** {m['F1']:.2f}")
+                    st.info(f"💡 {m['Note']}")
                 top3 = probs.argsort()[-3:][::-1]
                 df = pd.DataFrame({'Fruit': [fruit_labels[i] for i in top3], 'Prob': [probs[i]*100 for i in top3]})
                 st.bar_chart(df, x="Fruit", y="Prob", height=180)
