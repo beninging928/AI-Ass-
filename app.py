@@ -312,7 +312,6 @@ if page == "🏠 System Overview":
         <div class="arch-card arch-cnn">
             <h3 style="margin:0 0 8px">🤖 CNN</h3>
             <p style="margin:0;font-size:.88rem;opacity:.9">
-                <b>Weight: 70%</b><br>
                 Convolutional Neural Network — extracts complex spatial features directly from
                 pixel data using 128×128 RGB input. Primary model of the ensemble.
             </p>
@@ -326,7 +325,6 @@ if page == "🏠 System Overview":
         <div class="arch-card arch-svm">
             <h3 style="margin:0 0 8px">📐 SVM</h3>
             <p style="margin:0;font-size:.88rem;opacity:.9">
-                <b>Weight: 20%</b><br>
                 Support Vector Machine on HOG texture features + 8-bin color histograms.
                 Finds optimal decision hyperplanes in high-dimensional feature space.
             </p>
@@ -340,7 +338,6 @@ if page == "🏠 System Overview":
         <div class="arch-card arch-lr">
             <h3 style="margin:0 0 8px">📊 Logistic Regression</h3>
             <p style="margin:0;font-size:.88rem;opacity:.9">
-                <b>Weight: 10%</b><br>
                 Combines HOG, Canny edge map, and color histograms. Provides a fast,
                 interpretable probabilistic baseline for the ensemble.
             </p>
